@@ -1,26 +1,79 @@
- function Watcher(vm, exp, cb) {
-        this.cb = cb;
+class Watcher {
+    constructor (vm,exp,cb) {
+        this.watcherId = "watcher"+wacherCount++;
+        this.id = {};
         this.vm = vm;
         this.exp = exp;
-        // 此处为了触发属性的getter，从而在dep添加自己，结合Observer更易理解
+        this.cb = cb;
         this.value = this.get();
     }
-    Watcher.prototype = {
-        update: function() {
-            this.run(); // 属性值变化收到通知
-        },
-        run: function() {
-            var value = this.get(); // 取到最新值
-            var oldVal = this.value;
-            if (value !== oldVal) {
-                this.value = value;
-                this.cb.call(this.vm, value, oldVal); // 执行Compile中绑定的回调，更新视图
-            }
-        },
-        get: function() {
-            Dep.target = this; // 将当前订阅者指向自己
-            var value = this.vm[this.exp]; // 触发getter，添加自己到属性订阅器中
-            Dep.target = null; // 添加完毕，重置
-            return value;
+
+    get () {
+        Dep.target = this;
+        let value = this.vm[this.exp];
+        Dep.target = null;
+        return value;
+    }
+
+     addDep(dep) {
+          // 如果在depIds的hash中没有当前的id,可以判断是新Watcher,因此可以添加到dep的数组中储存
+          // 此判断是避免同id的Watcher被多次储存
+          if (!this.id.hasOwnProperty(dep.id)) {
+            dep.sub(this);
+            this.id[dep.id] = dep;
+          }
         }
-    };
+
+    update () {
+        this.vm.batcher.push(this);
+        //this.run();
+    }
+
+    run () {
+        let oldValue = this.value;
+        let newValue = this.get();
+        if(oldValue!==newValue){
+            this.value = newValue;
+            this.cb.call(this.vm,newValue,oldValue); 
+        }
+        
+    }
+
+
+}
+
+var wacherCount=1;
+class Batcher {
+    constructor () {
+        this.reset();
+    }
+    reset () {
+        this.queue = [];
+        this.has = {};
+        this.waiting = false;
+    }
+
+    push (watcher) {
+        console.log(this.has[watcher.watcherId]);
+        if(!this.has[watcher.watcherId]){
+            this.has[watcher.watcherId] = watcher;
+            this.queue.push(watcher);
+            if(!this.waiting){
+                this.waiting = true;
+                // setTimeout(()=>{
+                //     this.flush();
+                // },0)
+                nextTick(this.flush,this);
+            }
+        }
+
+        
+    }
+
+    flush() {
+        this.queue.forEach((watcher)=>{
+            watcher.run();
+        });
+        this.reset();
+    }
+}

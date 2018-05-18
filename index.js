@@ -1,77 +1,149 @@
-
-    function MVVM(options) {
-        this.$options = options;
-        this._method = options.method || {};
-        var data = this._data = this.$options.data || {},
-            me = this;
-        // 属性代理，实现 vm.xxx -> vm._data.xxx
-        Object.keys(data).forEach(function(key) {
-            me._proxy(key);
-            if(Array.isArray(data[key])){
-              me.mutationMethod(key);
+class Vue {
+    constructor (option) {
+        this.$option = option;
+        this._data = this.$option.data;
+        Object.keys(this._data).forEach((key)=>{
+            this.proxy(key);
+            if(Array.isArray(this._data[key])){
+                this.mutationMethod(key);
             }
         });
-        Object.keys(this._method).forEach(function(key) {
-            me._proxy(key);
+
+
+
+        new Observer(this._data);
+        this.batcher = new Batcher();
+    }
+
+    proxy (key) {
+        Object.defineProperty(this,key,{
+            configurable: true,
+            enumerable: true,
+            get () {
+                return this._data[key];
+            },
+
+            set (v) {
+                this._data[key] = v;  
+            }
         });
-        new Observer(data, this);
-        this.$compile = new Compile(options.el || document.body, this)
     }
 
-    MVVM.prototype = {
-        _proxy: function(key) {
-            var me = this;
-            Object.defineProperty(me, key, {
-                configurable: false,
-                enumerable: true,
-                get: function proxyGetter() {
-                    return me._data[key];
-                },
-                set: function proxySetter(newVal) {
-                    me._data[key] = newVal;
-                }
-            });
-        },
+    $watcher (exp,cb) {
+        new Watcher(this,exp,cb);
+    }
 
-        mutationMethod: function (key) {
-               var self = this;
-               const aryMethods = ['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'];
-               const arrayAugmentations = [];
-               aryMethods.forEach((method)=> {
-                   // 这里是原生Array的原型方法
-                   let original = Array.prototype[method];
+    mutationMethod (key) {
+        const aryMethods = ['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'];
+        const arrayAugmentations = [];
+        let self = this;
+        aryMethods.forEach(function(method){
+           
+           arrayAugmentations[method] = function(){
+                    
+                    let result = Array.prototype[method].apply(this,arguments);
+                    let arr = this.slice(0);
+                    arr.__proto__ = arrayAugmentations;
+                    self._data[key] = arr;
+                    return result;
+                
+            }
+        }); 
+        self._data[key].__proto__ = arrayAugmentations;
 
-                   // 将push, pop等封装好的方法定义在对象arrayAugmentations的属性上
-                   // 注意：是属性而非原型属性
-                   arrayAugmentations[method] = function () {
-                       var result = original.apply(this, arguments)
-                       var copyArr = this.slice(0);
-                       copyArr.__proto__ = arrayAugmentations;
+    }
+    // 
+    // mutationMethod (key) {
+    //            var self = this;
+    //            const aryMethods = ['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'];
+    //            const arrayAugmentations = [];
+    //            aryMethods.forEach((method)=> {
+    //                // 这里是原生Array的原型方法
+    //                let original = Array.prototype[method];
 
-                       console.log('数组变动了！')
-                       self._data[key] = copyArr
+    //                // 将push, pop等封装好的方法定义在对象arrayAugmentations的属性上
+    //                // 注意：是属性而非原型属性
+    //                arrayAugmentations[method] = function () {
+    //                    var result = original.apply(this, arguments)
+    //                    var copyArr = this.slice(0);
+    //                    copyArr.__proto__ = arrayAugmentations;
 
-                       return result;
-                   };
-               });
-               self._data[key].__proto__ = arrayAugmentations;
-           }
-    };
+    //                    console.log('数组变动了！')
+    //                    self._data[key] = copyArr
 
+    //                    return result;
+    //                };
+    //            });
+    //            self._data[key].__proto__ = arrayAugmentations;
+    //        }
+}
 
-    let option = {
-      el: '#app',
-        data: {
-            value: 'kindeng',
-            items: [1,2,3]
+function nextTick  ()   {
+    var callbacks = [];   // 缓存函数的数组
+    var pending = false;  // 是否正在执行
+    var timerFunc;  // 保存着要执行的函数
+
+    function nextTickHandler () {
+      pending = false;
+      //  拷贝出函数数组副本
+      var copies = callbacks.slice(0);
+      //  把函数数组清空
+      callbacks.length = 0;
+      // 依次执行函数
+      for (var i = 0; i < copies.length; i++) {
+        copies[i]();
+      }
+    }
+
+    if (typeof Promise !== 'undefined' ) {
+      var p = Promise.resolve();
+      // var logError = function (err) { console.error(err); };
+      timerFunc = function () {
+        p.then(nextTickHandler);
+       
+      };
+    }
+    else if (typeof MutationObserver !== 'undefined') {
+
+      var counter = 1;
+      var observer = new MutationObserver(nextTickHandler);
+      var textNode = document.createTextNode(String(counter));
+      observer.observe(textNode, {
+        characterData: true
+      });
+      timerFunc = function () {
+        counter = (counter + 1) % 2;
+        textNode.data = String(counter);
+      };
+    }
+    else {
+        timerFunc = function () {
+          setTimeout(nextTickHandler, 0);
+        };
+      }
+
+    return function queueNextTick (cb, ctx) {
+        var _resolve;
+        callbacks.push(function () {
+          if (cb) { cb.call(ctx); }
+          if (_resolve) { _resolve(ctx); }
+        });
+        // 如果没有函数队列在执行才执行
+        if (!pending) {
+          pending = true;
+          timerFunc();
         }
-    }
-    let vm = new MVVM(option);
+        // promise化
+        if (!cb && typeof Promise !== 'undefined') {
+          console.log('进来了')
+          return new Promise(function (resolve) {
+            _resolve = resolve;
+          })
+        }
+      }
 
-    setTimeout(() => {
-      // vm.value='a';
-        vm.items.push(4);
 
-    }, 1000);
-    console.log(vm.value);
-   
+};
+
+
+var nextTick = nextTick();

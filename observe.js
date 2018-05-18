@@ -1,62 +1,80 @@
 class Observer {
     constructor (data) {
-        if (!data || Array.isArray(data) || typeof data !== 'object') {
-            return;
-        }else{
-          // 取出所有属性遍历
-          Object.keys(data).forEach((key) => {
-              this.defineReactive(data, key, data[key]);
-          });
-        }
+        this.data = data;
+        this.walk(data);
     }
 
-    defineReactive (data, key, val) {
-            var dep = new Dep();
-            this.observe(val); // 监听子属性
+    walk (data) {
+        Object.keys(data).forEach(key => this.convert(key, data[key]));
+    }
 
-            Object.defineProperty(data, key, {
-                get: function() {
-                    // 由于需要在闭包内添加watcher，所以通过Dep定义一个全局target属性，暂存watcher, 添加完移除
-                    Dep.target && dep.addSub(Dep.target);
-                    return val;
-                },
-                set: function(newVal) {
-                    if (val === newVal) return;
-                    console.log('哈哈哈，监听到值变化了 ', val, ' --> ', newVal);
-                    val = newVal;
-                    dep.notify(); // 通知所有订阅者
+    convert (key,val) {
+        const dep = new Dep();
+        let chlidOb = observer(val);
+        Object.defineProperty(this.data,key,{
+            configurable: true,
+            enumerable: true,
+            get () {
+                
+                if(Dep.target!==null){
+                    //dep.sub(Dep.target);
+                    dep.depend();
                 }
-            });
+                return val;
+            },
+
+            set (v) {
+
+                val = v;
+                observer(val);
+                dep.notify();
+            }
+        });
     }
 
-    observe (data) {
-        if (!data || Array.isArray(data) || typeof data !== 'object') {
+    
+
+}
+
+function observer (data) {
+        if(data === null  || typeof data !== 'object' || Array.isArray(data)){
             return;
         }
 
         return new Observer(data);
-
     }
 
-    
-    
-        
-        
-};
-
-
-
-    function Dep() {
-        this.subs = [];
+var uid = 1;
+class Dep {
+    constructor () {
+        this.queue = [];
+        this.id = uid++;
     }
-    Dep.prototype = {
-        addSub: function(sub) {
-            this.subs.push(sub);
-        },
-        notify: function() {
-            this.subs.forEach(function(sub) {
-                sub.update();
-            });
-        },
 
-    };
+    sub (watcher) {
+        this.queue.push(watcher);
+    }
+
+     // 触发target上的Watcher中的addDep方法,参数为dep的实例本身
+    depend() {
+      Dep.target.addDep(this);
+    }
+
+    notify () {
+        this.queue.forEach((watcher)=>{
+            watcher.update();
+        });
+    }
+
+    remove (watcher) {
+        for(let i=0,len=arguments.length;i<len;i++){
+            let index = this.queue.indexOf(arguments[i]);
+            if(index===-1){
+                continue;
+            }
+
+            this.queue.splice(index,1);
+        }
+        
+    }
+}
